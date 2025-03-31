@@ -1,60 +1,30 @@
 from typing import Dict, List, Optional
 import re
 from urllib.parse import urlparse, parse_qs
-import requests
 import time
-import hashlib
-import hmac
-import base64
+import os
+import ipdb
+from iop.base import IopClient, IopRequest
 
 class AliExpressClient:
-    def __init__(self, api_key: str, affiliate_id: str):
+    def __init__(self, api_key: str, affiliate_id: str, app_secret: str = None):
+        if not api_key:
+            raise ValueError("API Key is required for API authentication")
+        if not affiliate_id:
+            raise ValueError("Affiliate ID is required for API authentication")
+        
         self.api_key = api_key
         self.affiliate_id = affiliate_id
-        self.base_url = "https://api.aliexpress.com/v2"
-        self.app_secret = ""  # You'll need to add your app secret here
-    
-    def _generate_signature(self, params: Dict) -> str:
-        """Generate signature for API request"""
-        # Sort parameters alphabetically
-        sorted_params = sorted(params.items())
+        self.app_secret = app_secret or os.getenv("ALIEXPRESS_APP_SECRET", "")
+        if not self.app_secret:
+            raise ValueError("App Secret is required for API authentication")
         
-        # Create string to sign
-        string_to_sign = self.app_secret
-        for key, value in sorted_params:
-            string_to_sign += key + value
-        string_to_sign += self.app_secret
-        
-        # Generate signature
-        signature = hmac.new(
-            self.app_secret.encode('utf-8'),
-            string_to_sign.encode('utf-8'),
-            hashlib.sha256
-        ).digest()
-        
-        return base64.b64encode(signature).decode('utf-8')
-    
-    def _make_request(self, method: str, params: Dict) -> Dict:
-        """Make API request to AliExpress"""
-        # Add common parameters
-        params.update({
-            'app_key': self.api_key,
-            'method': method,
-            'timestamp': str(int(time.time() * 1000)),
-            'format': 'json',
-            'v': '2.0',
-            'sign_method': 'hmac'
-        })
-        
-        # Generate signature
-        params['sign'] = self._generate_signature(params)
-        
-        try:
-            response = requests.get(self.base_url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"API request failed: {str(e)}")
+        # Initialize the SDK client
+        self.client = IopClient(
+            server_url="https://api-sg.aliexpress.com/sync",
+            app_key=self.api_key,
+            app_secret=self.app_secret
+        )
     
     def extract_product_id_from_url(self, url: str) -> Optional[str]:
         """Extract product ID from AliExpress URL"""
@@ -67,6 +37,16 @@ class AliExpressClient:
             for part in path_parts:
                 if part.startswith('item-') or part.startswith('product-'):
                     return part.split('-')[1]
+
+                # Handle URLs ending in .html
+                if part.endswith('.html'):
+                    # Remove .html extension
+                    part = part[:-5]
+                    if part.isdigit() and len(part) > 8:
+                        return part
+                # Handle direct item numbers
+                if part.isdigit() and len(part) > 8:
+                    return part
             
             # Try to find product ID in query parameters
             query_params = parse_qs(parsed_url.query)
@@ -79,25 +59,48 @@ class AliExpressClient:
     
     def get_product_details(self, product_id: str) -> Optional[Dict]:
         """Get product details from AliExpress API"""
-        params = {
-            'product_id': product_id,
-            'fields': 'product_id,product_title,product_price,product_url'
-        }
-        
         try:
-            response = self._make_request('aliexpress.product.details.get', params)
+            # Create request
+            request = IopRequest('aliexpress.affiliate.productdetail.get')
+            request.add_api_param('fields', 'product_id,product_title,product_price,product_url,commission_rate,sale_price')
+            request.add_api_param('product_ids', product_id)
+            request.add_api_param('target_currency', 'USD')
+            request.add_api_param('target_language', 'EN')
+            request.add_api_param('tracking_id', self.affiliate_id) 
+            request.add_api_param('country', 'US')
             
-            if 'error_response' in response:
-                raise Exception(response['error_response']['msg'])
+            # Debug request parameters
+            ipdb.set_trace()
+            print("Request parameters:", request._api_params)
             
-            product = response['aliexpress_product_details_get_response']['product']
+            # Execute request
+            response = self.client.execute(request)
+            
+            # Debug response
+            print("Response:", response)
+            print("Response body:", response.body)
+            
+            if response.code != "0":
+                print(f"API Error: {response.message}")
+                return None
+            
+            # Handle response
+            if 'aliexpress_affiliate_productdetail_get_response' in response.body:
+                product = response.body['aliexpress_affiliate_productdetail_get_response']['product']
+            else:
+                product = response.body.get('product', {})
+            
+            if not product:
+                print("No product data found in response")
+                return None
             
             return {
-                "id": product['product_id'],
-                "title": product['product_title'],
-                "price": float(product['product_price']),
-                "url": product['product_url'],
-                "affiliate_url": f"{product['product_url']}?affiliate_id={self.affiliate_id}"
+                "id": product.get('product_id'),
+                "title": product.get('product_title'),
+                "price": float(product.get('sale_price', 0)),
+                "url": product.get('product_url'),
+                "commission_rate": float(product.get('commission_rate', 0)),
+                "affiliate_url": f"{product.get('product_url', '')}?affiliate_id={self.affiliate_id}"
             }
         except Exception as e:
             print(f"Error getting product details: {str(e)}")
@@ -110,22 +113,22 @@ class AliExpressClient:
         if not product:
             return []
         
-        # Search for similar products
-        params = {
-            'keywords': product['title'],
-            'price_range': f"0-{max_price}",
-            'sort': 'price_asc',
-            'page_size': 20,
-            'page_no': 1
-        }
-        
         try:
-            response = self._make_request('aliexpress.products.search', params)
+            # Create request
+            request = IopRequest('aliexpress.products.search')
+            request.add_api_param('keywords', product['title'])
+            request.add_api_param('price_range', f"0-{max_price}")
+            request.add_api_param('sort', 'price_asc')
+            request.add_api_param('page_size', 20)
+            request.add_api_param('page_no', 1)
             
-            if 'error_response' in response:
-                raise Exception(response['error_response']['msg'])
+            # Execute request
+            response = self.client.execute(request)
             
-            products = response['aliexpress_products_search_response']['products']['product']
+            if response.code != "0":
+                raise Exception(response.message)
+            
+            products = response.body['aliexpress_products_search_response']['products']['product']
             
             # Filter and format results
             similar_products = []
@@ -142,4 +145,42 @@ class AliExpressClient:
             return similar_products
         except Exception as e:
             print(f"Error searching similar products: {str(e)}")
+            return []
+
+    def search_by_image(self, image_base64: str, max_price: float = None) -> List[Dict]:
+        """Search for products using an image"""
+        try:
+            # Create request
+            request = IopRequest('aliexpress.ds.image.searchV2')
+            request.add_api_param('image_base64', image_base64)
+            request.add_api_param('page_size', 20)
+            request.add_api_param('page_no', 1)
+            
+            if max_price:
+                request.add_api_param('price_range', f"0-{max_price}")
+            
+            # Execute request
+            response = self.client.execute(request)
+            
+            if response.code != "0":
+                raise Exception(response.message)
+            
+            products = response.body['aliexpress_ds_image_search_v2_response']['products']['product']
+            
+            # Format results
+            search_results = []
+            for p in products:
+                product_data = {
+                    "id": p['product_id'],
+                    "title": p['product_title'],
+                    "price": float(p['product_price']),
+                    "url": p['product_url'],
+                    "affiliate_url": f"{p['product_url']}?affiliate_id={self.affiliate_id}",
+                    "image_url": p.get('product_image_url', '')
+                }
+                search_results.append(product_data)
+            
+            return search_results
+        except Exception as e:
+            print(f"Error searching by image: {str(e)}")
             return [] 

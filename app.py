@@ -1,21 +1,42 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import Dict, List
 import json
 import os
 from dotenv import load_dotenv
 from aliexpress_client import AliExpressClient
+import base64
+from io import BytesIO
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8080", "http://127.0.0.1:8080"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 # Initialize AliExpress client
+api_key = os.getenv("ALIEXPRESS_API_KEY", "")
+affiliate_id = os.getenv("ALIEXPRESS_AFFILIATE_ID", "")
+app_secret = os.getenv("ALIEXPRESS_APP_SECRET", "")
+
+print(f"API Key length: {len(api_key)}")
+print(f"Affiliate ID length: {len(affiliate_id)}")
+print(f"App Secret length: {len(app_secret)}")
+
 aliexpress_client = AliExpressClient(
-    api_key=os.getenv("ALIEXPRESS_API_KEY", ""),
-    affiliate_id=os.getenv("ALIEXPRESS_AFFILIATE_ID", "")
+    api_key=api_key,
+    affiliate_id=affiliate_id,
+    app_secret=app_secret
 )
 
 @app.get("/health")
@@ -27,132 +48,102 @@ async def health_check():
 async def webhook(request: Request):
     """Handle incoming WhatsApp messages"""
     try:
-        body = await request.json()
+        data = await request.json()
+        print("Received webhook data:", data)  # Debug log
         
-        # Extract message from WhatsApp webhook
-        entry = body.get("entry", [{}])[0]
-        changes = entry.get("changes", [{}])[0]
-        value = changes.get("value", {})
-        message = value.get("messages", [{}])[0]
+        if not data or 'entry' not in data:
+            print("Invalid webhook data format")  # Debug log
+            return JSONResponse({"error": "Invalid webhook data format"}), 400
         
-        if not message:
-            return JSONResponse({"status": "ok"})
+        for entry in data['entry']:
+            for change in entry.get('changes', []):
+                if 'value' in change and 'messages' in change['value']:
+                    for message in change['value']['messages']:
+                        if 'text' in message and 'body' in message['text']:
+                            url = message['text']['body']
+                            print(f"Processing URL: {url}")  # Debug log
+                            
+                            try:
+                                # Extract product ID
+                                product_id = aliexpress_client.extract_product_id_from_url(url)
+                                if not product_id:
+                                    print("Could not extract product ID from URL")  # Debug log
+                                    return JSONResponse({"error": "Invalid AliExpress URL"}), 400
+                                
+                                print(f"Extracted product ID: {product_id}")  # Debug log
+                                
+                                # Get product details
+                                product = aliexpress_client.get_product_details(product_id)
+                                if not product:
+                                    print("Failed to get product details")  # Debug log
+                                    return JSONResponse({"error": "Failed to get product details"}), 500
+                                
+                                print(f"Got product details: {product}")  # Debug log
+                                
+                                # Search for similar products
+                                similar_products = aliexpress_client.search_similar_products(product_id, float(product['price']))
+                                print(f"Found {len(similar_products)} similar products")  # Debug log
+                                
+                                return JSONResponse({
+                                    "product": product,
+                                    "similar_products": similar_products
+                                })
+                            except Exception as e:
+                                print(f"Error processing product: {str(e)}")  # Debug log
+                                return JSONResponse({"error": str(e)}), 500
         
-        # Get the message text
-        text = message.get("text", {}).get("body", "")
+        return JSONResponse({"error": "No valid message found"}), 400
+    except Exception as e:
+        print(f"Webhook error: {str(e)}")  # Debug log
+        return JSONResponse({"error": str(e)}), 500
+
+@app.post("/search-by-image")
+async def search_by_image(
+    image: UploadFile = File(...),
+    max_price: float = None
+):
+    """Search for products using an uploaded image"""
+    try:
+        # Read and convert image to base64
+        contents = await image.read()
+        image_base64 = base64.b64encode(contents).decode('utf-8')
         
-        # Handle direct AliExpress product link
-        if "aliexpress.com" in text.lower():
-            product_id = aliexpress_client.extract_product_id_from_url(text)
-            if not product_id:
-                return JSONResponse({
-                    "status": "error",
-                    "message": "Could not extract product ID from the URL"
-                })
-            
-            # Get product details
-            product = aliexpress_client.get_product_details(product_id)
-            if not product:
-                return JSONResponse({
-                    "status": "error",
-                    "message": "Product not found"
-                })
-            
-            # Search for cheaper alternatives
-            similar_products = aliexpress_client.search_similar_products(product_id, product["price"])
-            
-            if similar_products:
-                # Find the cheapest alternative
-                cheapest_alternative = min(similar_products, key=lambda x: x["price"])
-                response_text = (
-                    f"Found a cheaper alternative for {product['title']}!\n"
-                    f"Original price: ${product['price']}\n"
-                    f"Alternative: {cheapest_alternative['title']}\n"
-                    f"Price: ${cheapest_alternative['price']}\n"
-                    f"Link: {cheapest_alternative['affiliate_url']}"
-                )
-            else:
-                response_text = (
-                    f"Product: {product['title']}\n"
-                    f"Price: ${product['price']}\n"
-                    f"Sorry, couldn't find a cheaper alternative."
-                )
-            
+        # Search for products using the image
+        results = aliexpress_client.search_by_image(image_base64, max_price)
+        
+        if not results:
             return JSONResponse({
                 "status": "success",
-                "message": response_text
+                "message": "No products found matching your image.",
+                "products": []
             })
         
-        # Handle search command
-        if text.startswith("/search"):
-            # Format: /search keywords price
-            parts = text.split()
-            if len(parts) != 3:
-                return JSONResponse({
-                    "status": "error",
-                    "message": "Please use format: /search keywords price"
-                })
-            
-            keywords = parts[1]
-            try:
-                max_price = float(parts[2])
-            except ValueError:
-                return JSONResponse({
-                    "status": "error",
-                    "message": "Please provide a valid price"
-                })
-            
-            # Search for products
-            params = {
-                'keywords': keywords,
-                'price_range': f"0-{max_price}",
-                'sort': 'price_asc',
-                'page_size': 20,
-                'page_no': 1
-            }
-            
-            try:
-                response = aliexpress_client._make_request('aliexpress.products.search', params)
-                
-                if 'error_response' in response:
-                    return JSONResponse({
-                        "status": "error",
-                        "message": response['error_response']['msg']
-                    })
-                
-                products = response['aliexpress_products_search_response']['products']['product']
-                
-                if not products:
-                    return JSONResponse({
-                        "status": "success",
-                        "message": "No products found matching your criteria."
-                    })
-                
-                # Get the cheapest product
-                cheapest_product = min(products, key=lambda x: float(x['product_price']))
-                
-                response_text = (
-                    f"Found a product matching your criteria!\n"
-                    f"Product: {cheapest_product['product_title']}\n"
-                    f"Price: ${float(cheapest_product['product_price'])}\n"
-                    f"Link: {cheapest_product['product_url']}?affiliate_id={aliexpress_client.affiliate_id}"
-                )
-                
-                return JSONResponse({
-                    "status": "success",
-                    "message": response_text
-                })
-                
-            except Exception as e:
-                return JSONResponse({
-                    "status": "error",
-                    "message": f"Error searching products: {str(e)}"
-                })
+        # Format response
+        response_text = "Found products matching your image:\n\n"
+        for product in results[:5]:  # Show top 5 results
+            response_text += (
+                f"Product: {product['title']}\n"
+                f"Price: ${product['price']}\n"
+                f"Link: {product['affiliate_url']}\n\n"
+            )
         
-        return JSONResponse({"status": "ok"})
-    
+        return JSONResponse({
+            "status": "success",
+            "message": response_text,
+            "products": results
+        })
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse({
+            "status": "error",
+            "message": f"Error processing image search: {str(e)}"
+        })
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=5001,
+        reload=True  # Enable hot reload
+    ) 

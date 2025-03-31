@@ -4,16 +4,12 @@ services:
   pricehunt:
     build: .
     ports:
-      - "8000:8000"
+      - "5001:5001"
+    volumes:
+      - .:/app
     environment:
       - ALIEXPRESS_API_KEY=${ALIEXPRESS_API_KEY}
       - ALIEXPRESS_AFFILIATE_ID=${ALIEXPRESS_AFFILIATE_ID}
       - ALIEXPRESS_APP_SECRET=${ALIEXPRESS_APP_SECRET}
-    volumes:
-      - .:/app
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3 
+      - PYTHONUNBUFFERED=1
+    command: uvicorn app:app --host 0.0.0.0 --port 5001 --reload 
