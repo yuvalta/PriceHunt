@@ -68,29 +68,20 @@ class AliExpressClient:
             request.add_api_param('target_language', 'EN')
             request.add_api_param('tracking_id', self.affiliate_id) 
             request.add_api_param('country', 'US')
-            
-            # Debug request parameters
-            ipdb.set_trace()
-            print("Request parameters:", request._api_params)
-            
+                
             # Execute request
             response = self.client.execute(request)
             
             # Debug response
-            print("Response:", response)
             print("Response body:", response.body)
-            
-            if response.code != "0":
-                print(f"API Error: {response.message}")
-                return None
             
             # Handle response
             if 'aliexpress_affiliate_productdetail_get_response' in response.body:
-                product = response.body['aliexpress_affiliate_productdetail_get_response']['product']
+                product = response.body.get('aliexpress_affiliate_productdetail_get_response', '').get('resp_result', '').get('result', '').get('products', {}).get('product')[0]
             else:
                 product = response.body.get('product', {})
             
-            if not product:
+            if not product :
                 print("No product data found in response")
                 return None
             
@@ -99,8 +90,8 @@ class AliExpressClient:
                 "title": product.get('product_title'),
                 "price": float(product.get('sale_price', 0)),
                 "url": product.get('product_url'),
-                "commission_rate": float(product.get('commission_rate', 0)),
-                "affiliate_url": f"{product.get('product_url', '')}?affiliate_id={self.affiliate_id}"
+                "commission_rate": product.get('commission_rate', 0),
+                "affiliate_url": self.generate_affiliate_link(product.get('product_detail_url'))
             }
         except Exception as e:
             print(f"Error getting product details: {str(e)}")
@@ -113,6 +104,7 @@ class AliExpressClient:
         if not product:
             return []
         
+        ipdb.set_trace()
         try:
             # Create request
             request = IopRequest('aliexpress.products.search')
@@ -184,3 +176,14 @@ class AliExpressClient:
         except Exception as e:
             print(f"Error searching by image: {str(e)}")
             return [] 
+        
+    def generate_affiliate_link(self, product_url: str) -> Optional[str]:
+        """Generate an affiliate link for a product by using aliexpress.affiliate.link.generate api"""
+        client = iop.IopClient(url, appkey ,appSecret)
+        request = iop.IopRequest('aliexpress.affiliate.link.generate')
+        request.add_api_param('source_values', product_url)
+        request.add_api_param('tracking_id', self.affiliate_id)
+        response = client.execute(request)
+        print(response.type)
+        print(response.body)
+        
