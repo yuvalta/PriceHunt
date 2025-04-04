@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from aliexpress_client import AliExpressClient
 import base64
 from io import BytesIO
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -71,7 +72,6 @@ async def webhook(request: Request):
                                     return JSONResponse({"error": "Invalid AliExpress URL"}), 400
                                 
                                 print(f"Extracted product ID: {product_id}")  # Debug log
-                                
                                 # Get product details
                                 product = aliexpress_client.get_product_details(product_id)
                                 if not product:
@@ -81,6 +81,7 @@ async def webhook(request: Request):
                                 print(f"Got product details: {product}")  # Debug log
                                 
                                 # Search for similar products
+                                # todo - smartmatch_products from here with keywords
                                 similar_products = aliexpress_client.search_similar_products(product_id, float(product['price']))
                                 print(f"Found {len(similar_products)} similar products")  # Debug log
                                 
@@ -97,17 +98,18 @@ async def webhook(request: Request):
         print(f"Webhook error: {str(e)}")  # Debug log
         return JSONResponse({"error": str(e)}), 500
 
-@app.post("/search-by-image")
-async def search_by_image(
-    image: UploadFile = File(...),
+
+class ImageSearchRequest(BaseModel):
+    image_base64: str
     max_price: float = None
-):
+
+@app.post("/search-by-image")
+async def search_by_image(request: ImageSearchRequest):
+    image_base64 = request.image_base64
+    max_price = request.max_price
+
     """Search for products using an uploaded image"""
     try:
-        # Read and convert image to base64
-        contents = await image.read()
-        image_base64 = base64.b64encode(contents).decode('utf-8')
-        
         # Search for products using the image
         results = aliexpress_client.search_by_image(image_base64, max_price)
         
@@ -138,6 +140,11 @@ async def search_by_image(
             "status": "error",
             "message": f"Error processing image search: {str(e)}"
         })
+
+    # todo- add api for smartmatch_products
+    
+
+
 
 if __name__ == '__main__':
     import uvicorn

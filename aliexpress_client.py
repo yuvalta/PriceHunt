@@ -151,6 +151,8 @@ class AliExpressClient:
             if max_price:
                 request.add_api_param('price_range', f"0-{max_price}")
             
+            import ipdb
+            ipdb.set_trace()
             # Execute request
             response = self.client.execute(request)
             
@@ -186,4 +188,27 @@ class AliExpressClient:
         response = client.execute(request)
         print(response.type)
         print(response.body)
+
+    def smartmatch_products(self, keywords: str, category_id: int = None, price_range: str = None, page_no: int = 1, page_size: int = 20, sort: str = 'price_asc') -> dict:
+        """Calls the smartmatch API to get recommended products based on the provided keywords."""
+        url = "https://api.aliexpress.com/affiliate/product/smartmatch"
+        timestamp = int(time.time() * 1000)
+
+        params = {
+            "app_key": self.api_key,
+            "session": self.access_token,
+            "security_token": self.security_token,  # Include security token
+            "keywords": keywords,
+            "page_no": page_no,
+            "page_size": page_size,
+            "sort": sort,
+            "category_id": category_id if category_id else "",
+            "price_range": price_range if price_range else "",
+            "timestamp": timestamp
+        }
+        sign = self.generate_signature(params)
+        params["sign"] = sign
+        
+        response = requests.post(url, data=params)
+        return response.json()
         

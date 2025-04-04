@@ -14,17 +14,20 @@ An AI-powered WhatsApp shopping assistant that helps you find better deals on Al
 ## Setup
 
 1. Install the required dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 2. Set up your environment variables in `.env`:
+
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
 ```
 
 3. Run the application:
+
 ```bash
 # Using Docker
 make build
@@ -86,3 +89,23 @@ MIT License - see LICENSE file for details
 ## Support
 
 For support, please open an issue in the GitHub repository.
+
+curl -X POST "http://localhost:5001/webhook" \
+-H "Content-Type: application/json" \
+-d '{
+"entry": [{
+"changes": [{
+"value": {
+"messages": [{
+"text": {
+"body": "https://www.aliexpress.com/item/1005007634558004.html"
+}
+}]
+}
+}]
+}]
+}'
+
+curl -X POST "http://localhost:5001/search-by-image" \
+ -H "Content-Type: application/json" \
+ -d '{"image_base64": "'"$IMAGE_BASE64"'", "max_price": 50.0}'
