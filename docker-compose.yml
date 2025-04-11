@@ -12,4 +12,4 @@ services:
       - ALIEXPRESS_AFFILIATE_ID=${ALIEXPRESS_AFFILIATE_ID}
       - ALIEXPRESS_APP_SECRET=${ALIEXPRESS_APP_SECRET}
       - PYTHONUNBUFFERED=1
-    command: uvicorn app:app --host 0.0.0.0 --port 5001 --reload 
+    command: uvicorn app:app --host 0.0.0.0 --port 5001 --reload --log-level info
