@@ -54,68 +54,63 @@ async def health_check():
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    """Handle incoming WhatsApp messages"""
+    """Handle incoming WhatsApp messages from Twilio"""
     start = time.time()
+    logger.info("Received Twilio webhook request %s", request)
     try:
-        data = await request.json()
-        logger.debug(f"Received webhook data: {data}")
+        form_data = await request.form()
+        logger.debug(f"Received Twilio webhook form data: {form_data}")
 
-        if not data or 'entry' not in data:
-            logger.warning("Invalid webhook data format")
-            return JSONResponse({"error": "Invalid webhook data format"}, status_code=400)
+        body = form_data.get("Body")
+        from_number = form_data.get("From")
 
-        for entry in data['entry']:
-            for change in entry.get('changes', []):
-                if 'value' in change and 'messages' in change['value']:
-                    for message in change['value']['messages']:
-                        text_body = message.get("text", {}).get("body")
-                        if text_body:
-                            url = text_body
-                            logger.info(f"Processing URL: {url}")
+        if not body or not from_number:
+            logger.warning("Missing 'Body' or 'From' in Twilio webhook")
+            return JSONResponse({"error": "Invalid Twilio webhook data"}, status_code=400)
 
-                            try:
-                                product_id = aliexpress_client.extract_product_id_from_url(url)
-                                if not product_id:
-                                    logger.warning("Could not extract product ID from URL")
-                                    return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
+        logger.info(f"Received message from {from_number}: {body}")
+        url = body
 
-                                product = aliexpress_client.get_single_product_details(product_id)
-                                if not product:
-                                    logger.error("Failed to get product details")
-                                    return JSONResponse({"error": "Failed to get product details"}, status_code=500)
+        try:
+            product_id = aliexpress_client.extract_product_id_from_url(url)
+            if not product_id:
+                logger.warning("Could not extract product ID from URL")
+                return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
 
-                                # TODO: Use real matching logic instead of dummy smartmatch
-                                similar_products_ids = aliexpress_client.smartmatch_products(product)
-                                logger.info(f"Smartmatched product IDs: {similar_products_ids}")
+            product = aliexpress_client.get_single_product_details(product_id)
+            if not product:
+                logger.error("Failed to get product details")
+                return JSONResponse({"error": "Failed to get product details"}, status_code=500)
 
-                                product_similar_by_id = aliexpress_client.get_multiple_products_details(similar_products_ids)
+            similar_products_ids = aliexpress_client.smartmatch_products(product)
+            logger.info(f"Smartmatched product IDs: {similar_products_ids}")
 
-                                if not product_similar_by_id:
-                                    logger.error("No similar products found")
-                                    return JSONResponse({"error": "No similar products found"}, status_code=404)
+            product_similar_by_id = aliexpress_client.get_multiple_products_details(similar_products_ids)
 
-                                cheaper_products = [
-                                    p for p in product_similar_by_id if p["price"] < product["price"]
-                                ]
+            if not product_similar_by_id:
+                logger.error("No similar products found")
+                return JSONResponse({"error": "No similar products found"}, status_code=404)
 
-                                end = time.time()
+            cheaper_products = [
+                p for p in product_similar_by_id if p["price"] < product["price"]
+            ]
 
-                                return JSONResponse({
-                                    "took": end - start,
-                                    "original_product": {product["title"]: product["price"]},
-                                    "cheaper_products": [{p["affiliate_url"]: p["price"]} for p in cheaper_products],
-                                })
+            end = time.time()
 
-                            except Exception as e:
-                                logger.exception(f"Error processing product: {e}")
-                                return JSONResponse({"error": str(e)}, status_code=500)
+            return JSONResponse({
+                "took": end - start,
+                "original_product": {product["title"]: product["price"]},
+                "cheaper_products": [{p["affiliate_url"]: p["price"]} for p in cheaper_products],
+            })
 
-        return JSONResponse({"error": "No valid message found"}, status_code=400)
+        except Exception as e:
+            logger.exception(f"Error processing product: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     except Exception as e:
         logger.exception(f"Webhook error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
-
+    
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=5001, reload=True)
