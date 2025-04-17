@@ -4,8 +4,8 @@ python-dotenv==1.0.0
 requests==2.31.0
 python-multipart==0.0.6
 httpx==0.25.1
-ipdb
 flask==2.0.1
 flask-cors==3.0.10
 gunicorn==20.1.0
 pydantic
+twilio==8.10.0
