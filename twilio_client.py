@@ -10,16 +10,21 @@ from_whatsapp = os.getenv("FROM_WHATSAPP")
 
 client = Client(twilio_sid, twilio_auth_token)
 
-def send_template_message(to_number, product_title, cheaper_links):
-    cheaper_text = "\n".join([f"- {p_url} (${p_price})" for p_url, p_price in cheaper_links])
-
+def send_template_message(to_number, product_title_1, product_title_2, product_title_3, product_url_1, product_url_2, product_url_3, product_price_1, product_price_2, product_price_3):
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        content_sid="your_template_sid",  # Only for content templates created in Twilio's Content API
+        content_sid="HXbf39d60a153dbe08c07aa1b27ccd4b95",
         content_variables={
-            "1": product_title,
-            "2": cheaper_text
+            "1": product_title_1,
+            "2": product_url_1,
+            "3": product_price_1,
+            "4": product_title_2,
+            "5": product_url_2,
+            "6": product_price_2,
+            "7": product_title_3,
+            "8": product_url_3,
+            "9": product_price_3,
         }
     )
     return message.sid

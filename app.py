@@ -6,6 +6,7 @@ import os
 import time
 from dotenv import load_dotenv
 from aliexpress_client import AliExpressClient
+import twilio_client
 
 # Setup logging
 logging.basicConfig(
@@ -66,6 +67,10 @@ async def webhook(request: Request):
 
         if not body or not from_number:
             logger.warning("Missing 'Body' or 'From' in Twilio webhook")
+            payload = form_data.get("Payload")
+            if payload:
+                logger.info(f"Received payload: {payload}")
+                return JSONResponse({"debug": "twilio_payload", "payload": payload}, status_code=200)
             return JSONResponse({"error": "Invalid Twilio webhook data"}, status_code=400)
 
         logger.info(f"Received message from {from_number}: {body}")
@@ -96,6 +101,19 @@ async def webhook(request: Request):
             ]
 
             end = time.time()
+
+            twilio_client.send_template_message(
+                to_number=from_number,
+                product_title_1=cheaper_products[0]["title"],
+                product_title_2=cheaper_products[1]["title"],
+                product_title_3=cheaper_products[2]["title"],
+                product_url_1=cheaper_products[0]["url"],
+                product_url_2=cheaper_products[1]["url"],
+                product_url_3=cheaper_products[2]["url"] ,
+                product_price_1=cheaper_products[0]["price"],
+                product_price_2=cheaper_products[1]["price"],
+                product_price_3=cheaper_products[2]["price"]
+            )
 
             return JSONResponse({
                 "took": end - start,
