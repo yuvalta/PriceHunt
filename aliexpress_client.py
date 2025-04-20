@@ -1,145 +1,121 @@
+import logging
+import os
 from typing import Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
-import os
-from iop.base import IopClient, IopRequest
-import logging
+import httpx
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 class AliExpressClient:
+    BASE_URL = "https://api-sg.aliexpress.com/sync"
+
     def __init__(self, api_key: str, affiliate_id: str, app_secret: Optional[str] = None):
-        if not api_key:
-            raise ValueError("API Key is required")
-        if not affiliate_id:
-            raise ValueError("Affiliate ID is required")
-        
+        if not api_key or not affiliate_id:
+            raise ValueError("API Key and Affiliate ID are required")
         self.api_key = api_key
         self.affiliate_id = affiliate_id
         self.app_secret = app_secret or os.getenv("ALIEXPRESS_APP_SECRET")
         if not self.app_secret:
             raise ValueError("App Secret is required")
-        
-        self.client = IopClient(
-            server_url="https://api-sg.aliexpress.com/sync",
-            app_key=self.api_key,
-            app_secret=self.app_secret
-        )
 
     def extract_product_id_from_url(self, url: str) -> Optional[str]:
         try:
             parsed_url = urlparse(url)
-            path_parts = parsed_url.path.split('/')
-            for part in path_parts:
+            for part in parsed_url.path.split('/'):
                 if part.startswith(('item-', 'product-')):
                     return part.split('-')[1]
                 if part.endswith('.html'):
                     part = part[:-5]
                 if part.isdigit() and len(part) > 8:
                     return part
-            query_params = parse_qs(parsed_url.query)
-            return query_params.get('productId', [None])[0]
+            return parse_qs(parsed_url.query).get('productId', [None])[0]
         except Exception as e:
             logging.error(f"Failed to extract product ID: {e}")
             return None
 
-    def _fetch_product_details(self, product_ids: str) -> Optional[List[Dict]]:
-        try:
-            request = IopRequest('aliexpress.affiliate.productdetail.get')
-            request.add_api_param('fields', 'product_id,product_title,product_price,product_url,commission_rate,sale_price,product_detail_url')
-            request.add_api_param('product_ids', product_ids)
-            request.add_api_param('target_currency', 'USD')
-            request.add_api_param('target_language', 'EN')
-            request.add_api_param('tracking_id', self.affiliate_id)
-            request.add_api_param('country', 'US')
+    async def _post(self, method: str, params: Dict) -> Optional[Dict]:
+        full_params = {
+            "app_key": self.api_key,
+            "method": method,
+            "sign_method": "hmac",
+            "timestamp": "2025-01-01 00:00:00",  # Update to current time or use a signature utility
+            "v": "1.0",
+            **params
+        }
 
-            response = self.client.execute(request)
-            products = response.body.get('aliexpress_affiliate_productdetail_get_response', {}) \
-                                   .get('resp_result', {}) \
-                                   .get('result', {}) \
-                                   .get('products', {}) \
-                                   .get('product', [])
+        # TODO: Sign request with HMAC and add 'sign' key here
+        # full_params["sign"] = your_signature_function(full_params, self.app_secret)
 
-            if not products:
-                logging.warning("No product data found in response")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(self.BASE_URL, data=full_params)
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                logging.exception(f"HTTP request failed: {e}")
                 return None
 
+    async def get_single_product_details(self, product_id: str) -> Optional[Dict]:
+        result = await self._fetch_product_details(product_id)
+        return result[0] if result else None
+
+    async def get_multiple_products_details(self, product_ids: str) -> Optional[List[Dict]]:
+        return await self._fetch_product_details(product_ids)
+
+    async def _fetch_product_details(self, product_ids: str) -> Optional[List[Dict]]:
+        data = await self._post("aliexpress.affiliate.productdetail.get", {
+            "fields": "product_id,product_title,product_price,product_url,commission_rate,sale_price,product_detail_url",
+            "product_ids": product_ids,
+            "target_currency": "USD",
+            "target_language": "EN",
+            "tracking_id": self.affiliate_id,
+            "country": "US"
+        })
+        try:
+            products = data['aliexpress_affiliate_productdetail_get_response']['resp_result']['result']['products']['product']
             result = []
             for p in products:
-                affiliate_link = self.generate_affiliate_link(p.get('product_detail_url'))[0]
-                logging.info(f"Generated affiliate link: {affiliate_link.get('promotion_link')}")
+                affiliate_link = await self.generate_affiliate_link(p['product_detail_url'])
                 result.append({
-                    "id": p.get('product_id'),
-                    "title": p.get('product_title'),
-                    "price": float(p.get('target_sale_price', 0)),
-                    "url": p.get('product_detail_url'),
-                    "commission_rate": p.get('commission_rate', 0),
-                    "affiliate_url": affiliate_link.get('promotion_link'),
+                    "id": p["product_id"],
+                    "title": p["product_title"],
+                    "price": float(p["target_sale_price"]),
+                    "url": p["product_detail_url"],
+                    "commission_rate": p["commission_rate"],
+                    "affiliate_url": affiliate_link,
                 })
-
-            logging.info(f"Fetched product details: {result}")
             return result
-
         except Exception as e:
-            logging.exception(f"Error fetching product details: {e}")
+            logging.exception(f"Error parsing product details: {e}")
             return None
 
-    def get_single_product_details(self, product_id: str) -> Optional[Dict]:
-        logging.info(f"Fetching details for product ID: {product_id}")
-        results = self._fetch_product_details(product_id)
-        return results[0] if results else None
-
-    def get_multiple_products_details(self, product_ids: str) -> Optional[List[Dict]]:
-        return self._fetch_product_details(product_ids)
-
-    def generate_affiliate_link(self, product_url: str) -> Optional[str]:
+    async def generate_affiliate_link(self, product_url: str) -> Optional[str]:
+        data = await self._post("aliexpress.affiliate.link.generate", {
+            "source_values": product_url,
+            "promotion_link_type": 2,
+            "tracking_id": self.affiliate_id
+        })
         try:
-            request = IopRequest('aliexpress.affiliate.link.generate')
-            request.add_api_param('source_values', product_url)
-            request.add_api_param("promotion_link_type", 2);
-            request.add_api_param('tracking_id', self.affiliate_id)
-            response = self.client.execute(request)
-
-            links = response.body.get('aliexpress_affiliate_link_generate_response', {}) \
-                                 .get('resp_result', {}) \
-                                 .get('result', {}) \
-                                 .get('promotion_links', [])
-            
-            logging.info(f"Generated affiliate links: {links}")
-
-            return links.get('promotion_link') if links else None
+            links = data['aliexpress_affiliate_link_generate_response']['resp_result']['result']['promotion_links']
+            return links[0]['promotion_link'] if links else None
         except Exception as e:
-            logging.exception(f"Error generating affiliate link: {e}")
+            logging.exception(f"Error parsing affiliate link: {e}")
             return None
 
-    def smartmatch_products(self, product: Dict) -> Optional[str]:
+    async def smartmatch_products(self, product: Dict) -> Optional[str]:
+        data = await self._post("aliexpress.affiliate.product.smartmatch", {
+            "keywords": product["title"],
+            "product_id": product["id"],
+            "page_no": 1,
+            "device_id": "aaaaaa"
+        })
         try:
-            request = IopRequest('aliexpress.affiliate.product.smartmatch')
-            request.add_api_param('keywords', product["title"])
-            request.add_api_param('product_id', product["id"])
-            request.add_api_param('page_no', 1)
-            request.add_api_param("device_id", "aaaaaa");
-
-
-            logging.info(f"Requesting smartmatch for: {product['title']}")
-
-            response = self.client.execute(request)
-            products = response.body.get('aliexpress_affiliate_product_smartmatch_response', {}) \
-                                   .get('resp_result', {}) \
-                                   .get('result', {}) \
-                                   .get('products', {}) \
-                                   .get('product', [])
-
-            if not products:
-                logging.warning("No smartmatched products found")
-                return None
-
-            cheaper_products = [p for p in products if p.get('product_id') and float(p.get('target_sale_price')) < product.get('price')]
-            sort_cheaper_products = sorted(cheaper_products, key=lambda x: float(x.get('target_sale_price', 0)))[:3]
-
-            return ",".join(str(p.get('product_id')) for p in sort_cheaper_products if p.get('product_id'))
+            products = data['aliexpress_affiliate_product_smartmatch_response']['resp_result']['result']['products']['product']
+            cheaper = sorted(
+                [p for p in products if float(p['target_sale_price']) < product['price']],
+                key=lambda x: float(x['target_sale_price'])
+            )[:3]
+            return ",".join(p['product_id'] for p in cheaper)
         except Exception as e:
-            logging.exception(f"Smartmatch failed: {e}")
+            logging.exception(f"Smartmatch parsing failed: {e}")
             return None

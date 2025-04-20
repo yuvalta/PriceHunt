@@ -1,5 +1,6 @@
 from twilio.rest import Client
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,7 +16,7 @@ def send_template_message(to_number, product_title_1, product_title_2, product_t
         from_=from_whatsapp,
         to=to_number,
         content_sid="HXbf39d60a153dbe08c07aa1b27ccd4b95",
-        content_variables={
+        content_variables=json.dumps({
             "1": product_title_1,
             "2": product_url_1,
             "3": product_price_1,
@@ -25,6 +26,6 @@ def send_template_message(to_number, product_title_1, product_title_2, product_t
             "7": product_title_3,
             "8": product_url_3,
             "9": product_price_3,
-        }
+        })
     )
     return message.sid
