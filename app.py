@@ -7,6 +7,8 @@ import time
 from dotenv import load_dotenv
 from aliexpress_client import AliExpressClient
 import twilio_client
+import json
+from fastapi.responses import PlainTextResponse
 
 # Setup logging
 logging.basicConfig(
@@ -53,6 +55,10 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+@app.post("/")
+async def root():
+    logger.info("Received POST request at root")
+
 @app.post("/webhook")
 async def webhook(request: Request):
     """Handle incoming WhatsApp messages from Twilio"""
@@ -60,66 +66,81 @@ async def webhook(request: Request):
     logger.info("Received Twilio webhook request %s", request)
     try:
         form_data = await request.form()
-        logger.debug(f"Received Twilio webhook form data: {form_data}")
+        logger.info(f"Received Twilio webhook form data: {form_data}")
 
         body = form_data.get("Body")
         from_number = form_data.get("From")
 
         if not body or not from_number:
-            logger.warning("Missing 'Body' or 'From' in Twilio webhook")
-            payload = form_data.get("Payload")
-            if payload:
-                logger.info(f"Received payload: {payload}")
-                return JSONResponse({"debug": "twilio_payload", "payload": payload}, status_code=200)
+            # Check if this is a fallback error payload
+            payload_raw = form_data.get("Payload")
+            if payload_raw:
+                try:
+                    payload = json.loads(payload_raw)
+                    params = payload.get("webhook", {}).get("request", {}).get("parameters", {})
+                    body = params.get("Body")
+                    from_number = params.get("From")
+                except Exception as e:
+                    logger.exception("Failed to parse fallback Payload")
+
+        if not body or not from_number:
+            logger.warning("Missing 'Body' or 'From' in all sources")
             return JSONResponse({"error": "Invalid Twilio webhook data"}, status_code=400)
 
-        logger.info(f"Received message from {from_number}: {body}")
+        logger.info(f"Incoming message from {from_number}: {body}")
         url = body
+
+        twilio_client.send_thinking_message(from_number)
 
         try:
             product_id = aliexpress_client.extract_product_id_from_url(url)
             if not product_id:
                 logger.warning("Could not extract product ID from URL")
-                return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
+                logger.info("Trying to expand shortlink")
+                expanded_url = await aliexpress_client.expand_shortlink(url)
+                if expanded_url:
+                    logger.info(f"Expanded URL: {expanded_url}")
+                    product_id = aliexpress_client.extract_product_id_from_url(expanded_url)
+                    if not product_id:
+                        logger.warning("Could not extract product ID from expanded URL")
+                        twilio_client.send_input_error_message(from_number)
+                        return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
+                else:
+                    logger.error("Failed to expand shortlink")
+                    twilio_client.send_input_error_message(from_number)
+                    return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
 
             product = aliexpress_client.get_single_product_details(product_id)
             if not product:
                 logger.error("Failed to get product details")
+                twilio_client.send_generic_error_message(from_number)
                 return JSONResponse({"error": "Failed to get product details"}, status_code=500)
 
-            similar_products_ids = aliexpress_client.smartmatch_products(product)
-            logger.info(f"Smartmatched product IDs: {similar_products_ids}")
-
-            product_similar_by_id = aliexpress_client.get_multiple_products_details(similar_products_ids)
-
-            if not product_similar_by_id:
-                logger.error("No similar products found")
-                return JSONResponse({"error": "No similar products found"}, status_code=404)
-
-            cheaper_products = [
-                p for p in product_similar_by_id if p["price"] < product["price"]
-            ]
+            similar_products_with_affiliate = aliexpress_client.similar_products(product)
+            logger.info(f"similar product aff links: {similar_products_with_affiliate}")
 
             end = time.time()
 
             twilio_client.send_template_message(
                 to_number=from_number,
-                product_title_1=cheaper_products[0]["title"],
-                product_title_2=cheaper_products[1]["title"],
-                product_title_3=cheaper_products[2]["title"],
-                product_url_1=cheaper_products[0]["url"],
-                product_url_2=cheaper_products[1]["url"],
-                product_url_3=cheaper_products[2]["url"] ,
-                product_price_1=cheaper_products[0]["price"],
-                product_price_2=cheaper_products[1]["price"],
-                product_price_3=cheaper_products[2]["price"]
+                product_title_1=similar_products_with_affiliate[0]["title"],
+                product_title_2=similar_products_with_affiliate[1]["title"],
+                product_title_3=similar_products_with_affiliate[2]["title"],
+                product_url_1=similar_products_with_affiliate[0]["affiliate_url"],
+                product_url_2=similar_products_with_affiliate[1]["affiliate_url"],
+                product_url_3=similar_products_with_affiliate[2]["affiliate_url"] ,
+                product_price_1=similar_products_with_affiliate[0]["price"],
+                product_price_2=similar_products_with_affiliate[1]["price"],
+                product_price_3=similar_products_with_affiliate[2]["price"]
             )
 
-            return JSONResponse({
+            logging.info({
                 "took": end - start,
-                "original_product": {product["title"]: product["price"]},
-                "cheaper_products": [{p["affiliate_url"]: p["price"]} for p in cheaper_products],
+                "original_product": {product["product_title"]: product["target_sale_price"]},
+                "cheaper_products": [{p["affiliate_url"]: p["target_sale_price"]} for p in similar_products_with_affiliate],
             })
+
+            return PlainTextResponse("OK", status_code=200)
 
         except Exception as e:
             logger.exception(f"Error processing product: {e}")

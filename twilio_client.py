@@ -1,6 +1,14 @@
 from twilio.rest import Client
 import os
 from dotenv import load_dotenv
+import json
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -10,21 +18,72 @@ from_whatsapp = os.getenv("FROM_WHATSAPP")
 
 client = Client(twilio_sid, twilio_auth_token)
 
-def send_template_message(to_number, product_title_1, product_title_2, product_title_3, product_url_1, product_url_2, product_url_3, product_price_1, product_price_2, product_price_3):
+def send_template_message(to_number, product_title_1, product_title_2, product_title_3,
+                          product_url_1, product_url_2, product_url_3,
+                          product_price_1, product_price_2, product_price_3):
+    
+    content_variables = json.dumps({
+        "1": product_title_1,
+        "2": str(product_price_1),
+        "3": product_url_1,
+        "4": product_title_2,
+        "5": str(product_price_2),
+        "6": product_url_2,
+        "7": product_title_3,
+        "8": str(product_price_3),
+        "9": product_url_3,
+    })
+
+    logger.info(f"Sending message to {to_number} with content variables: {content_variables}")
+
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        content_sid="HXbf39d60a153dbe08c07aa1b27ccd4b95",
-        content_variables={
-            "1": product_title_1,
-            "2": product_url_1,
-            "3": product_price_1,
-            "4": product_title_2,
-            "5": product_url_2,
-            "6": product_price_2,
-            "7": product_title_3,
-            "8": product_url_3,
-            "9": product_price_3,
-        }
+        content_sid="HXca4fbd21c71303d99c99a6fecc097647",
+        content_variables=content_variables
     )
+    
+    return message.sid
+
+def send_thinking_message(to_number):
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body="Thinking... 💭"
+    )
+    
+    return message.sid
+
+def send_generic_error_message(to_number):
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body="Oops! ❌"
+    )
+    
+    return message.sid
+
+def send_input_error_message(to_number):
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body="""
+            Oops! ❌ 
+            I didn't understand that. 
+            Please send a valid product link 👌
+
+            The best link to search look like this ✅
+            https://www.aliexpress.com/item/1234567890.html
+            """
+    )
+    
+    return message.sid
+
+def send_cant_find_product_message(to_number):
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body="I couldn't find the product you were looking for. Please try again with a different link."
+    )
+    
     return message.sid
