@@ -9,6 +9,7 @@ from aliexpress_client import AliExpressClient
 import twilio_client
 import json
 from fastapi.responses import PlainTextResponse
+from urllib.parse import urlparse
 
 # Setup logging
 logging.basicConfig(
@@ -85,10 +86,17 @@ async def webhook(request: Request):
 
         if not body or not from_number:
             logger.warning("Missing 'Body' or 'From' in all sources")
+            twilio_client.send_generic_error_message(from_number)
             return JSONResponse({"error": "Invalid Twilio webhook data"}, status_code=400)
 
         logger.info(f"Incoming message from {from_number}: {body}")
         url = body
+
+        # Check if the message is a valid URL
+        if not is_valid_url(url):
+            logger.warning("Invalid URL format")
+            twilio_client.send_input_error_message(from_number)
+            return JSONResponse({"error": "Invalid URL format"}, status_code=400)
 
         twilio_client.send_thinking_message(from_number)
 
@@ -149,6 +157,12 @@ async def webhook(request: Request):
     except Exception as e:
         logger.exception(f"Webhook error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
+    
+def is_valid_url(url):
+    if not url.startswith(('http://', 'https://')):
+        url = 'http://' + url  # assume http if missing
+    parsed = urlparse(url)
+    return bool(parsed.netloc)
     
 if __name__ == '__main__':
     import uvicorn
