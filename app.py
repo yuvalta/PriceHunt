@@ -64,7 +64,6 @@ async def root():
 async def webhook(request: Request):
     """Handle incoming WhatsApp messages from Twilio"""
     start = time.time()
-    logger.info("Received Twilio webhook request %s", request)
     try:
         form_data = await request.form()
         logger.info(f"Received Twilio webhook form data: {form_data}")
@@ -90,6 +89,7 @@ async def webhook(request: Request):
             return JSONResponse({"error": "Invalid Twilio webhook data"}, status_code=400)
 
         logger.info(f"Incoming message from {from_number}: {body}")
+        twilio_client.send_user_messaged_bot(from_number, body)
 
         if body == 'start':
             twilio_client.send_instruction_message(from_number)

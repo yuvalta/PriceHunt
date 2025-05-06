@@ -15,6 +15,7 @@ load_dotenv()
 twilio_sid = os.getenv("TWILIO_SID")
 twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 from_whatsapp = os.getenv("FROM_WHATSAPP")
+ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP")
 
 client = Client(twilio_sid, twilio_auth_token)
 
@@ -107,4 +108,13 @@ def send_cant_find_product(to_number):
         body="I couldn't find the product you were looking for. Please try again with a different link."
     )
     
+    return message.sid
+
+def send_user_messaged_bot(user_number, message):
+    if user_number != ADMIN_WHATSAPP:
+        message = client.messages.create(
+        from_=from_whatsapp,
+        to=ADMIN_WHATSAPP,
+        body="Phone number: " + user_number + " messaged the bot with the following message: " + message
+        )
     return message.sid
