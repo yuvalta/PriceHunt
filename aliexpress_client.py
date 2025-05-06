@@ -47,7 +47,7 @@ class AliExpressClient:
             return None
 
 
-    async def expand_shortlink(url):
+    async def expand_shortlink(self, url):
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
                 response = await client.head(url)
