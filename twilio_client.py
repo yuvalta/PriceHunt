@@ -117,5 +117,5 @@ def send_user_messaged_bot(user_number, message):
         to=ADMIN_WHATSAPP,
         body="Phone number: " + user_number + " messaged the bot with the following message: " + message
         )
-        return
-    return message.sid
+        return message.sid
+    return 
