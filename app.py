@@ -90,6 +90,11 @@ async def webhook(request: Request):
             return JSONResponse({"error": "Invalid Twilio webhook data"}, status_code=400)
 
         logger.info(f"Incoming message from {from_number}: {body}")
+
+        if body == 'start':
+            twilio_client.send_instruction_message(from_number)
+            return JSONResponse({"message": "Instructions sent"}, status_code=200)
+        
         url = body
 
         # Check if the message is a valid URL
@@ -121,11 +126,10 @@ async def webhook(request: Request):
             product = aliexpress_client.get_single_product_details(product_id)
             if not product:
                 logger.error("Failed to get product details")
-                twilio_client.send_generic_error_message(from_number)
+                twilio_client.send_cant_find_product(from_number)
                 return JSONResponse({"error": "Failed to get product details"}, status_code=500)
 
             similar_products_with_affiliate = aliexpress_client.similar_products(product)
-            logger.info(f"similar product aff links: {similar_products_with_affiliate}")
 
             end = time.time()
 
@@ -145,13 +149,14 @@ async def webhook(request: Request):
             logging.info({
                 "took": end - start,
                 "original_product": {product["product_title"]: product["target_sale_price"]},
-                "cheaper_products": [{p["affiliate_url"]: p["target_sale_price"]} for p in similar_products_with_affiliate],
+                "cheaper_products": [{p["affiliate_url"]: p["price"]} for p in similar_products_with_affiliate],
             })
 
             return PlainTextResponse("OK", status_code=200)
 
         except Exception as e:
             logger.exception(f"Error processing product: {e}")
+            twilio_client.send_generic_error_message(from_number)
             return JSONResponse({"error": str(e)}, status_code=500)
 
     except Exception as e:
@@ -159,10 +164,8 @@ async def webhook(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
     
 def is_valid_url(url):
-    if not url.startswith(('http://', 'https://')):
-        url = 'http://' + url  # assume http if missing
     parsed = urlparse(url)
-    return bool(parsed.netloc)
+    return all([parsed.scheme, parsed.netloc])
     
 if __name__ == '__main__':
     import uvicorn

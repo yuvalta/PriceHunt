@@ -87,3 +87,24 @@ def send_cant_find_product_message(to_number):
     )
     
     return message.sid
+
+def send_instruction_message(to_number):
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body="""
+            Hi! 👋 I'm Price Hunt
+            Just send me your Aliexpress product link and I'll find 3 cheaper products for you
+            """
+    )
+    
+    return message.sid
+
+def send_cant_find_product(to_number):
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body="I couldn't find the product you were looking for. Please try again with a different link."
+    )
+    
+    return message.sid
