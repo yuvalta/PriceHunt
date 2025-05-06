@@ -91,7 +91,7 @@ async def webhook(request: Request):
         logger.info(f"Incoming message from {from_number}: {body}")
         twilio_client.send_user_messaged_bot(from_number, body)
 
-        if body == 'start':
+        if body.lower() == 'start':
             twilio_client.send_instruction_message(from_number)
             return JSONResponse({"message": "Instructions sent"}, status_code=200)
         
