@@ -47,7 +47,7 @@ class AliExpressClient:
             logging.error(f"Failed to extract product ID: {e}")
             return None
 
-    def extract_product_id_from_url(url):
+    def extract_product_id_from_url(self, url):
         match = re.search(r'/item/(\d+)\.html', url)
         if match:
             return match.group(1)
@@ -63,7 +63,7 @@ class AliExpressClient:
     #         return None
         
     
-    def get_redirected_url_info(url):
+    def get_redirected_url_info(self, url):
         try:
             response = requests.get(url, allow_redirects=True)
             final_url = response.url
