@@ -97,6 +97,7 @@ async def webhook(request: Request):
         
         url = body
 
+        url = aliexpress_client.extract_url_from_text(url)
         # Check if the message is a valid URL
         if not is_valid_url(url):
             logger.warning("Invalid URL format")
@@ -106,8 +107,7 @@ async def webhook(request: Request):
         twilio_client.send_thinking_message(from_number)
 
         try:
-            just_link = aliexpress_client.extract_url_from_text(url)
-            product_id = aliexpress_client.extract_product_id_from_url(just_link)
+            product_id = aliexpress_client.extract_product_id_from_url(url)
             if not product_id:
                 logger.warning("Could not extract product ID from URL")
                 logger.info("Trying to expand shortlink")
@@ -129,7 +129,8 @@ async def webhook(request: Request):
             product = aliexpress_client.get_single_product_details(product_id)
             if not product:
                 logger.error("Failed to get product details")
-                twilio_client.send_cant_find_product(from_number)
+                aff_url =  aliexpress_client.generate_affiliate_link(url)
+                twilio_client.send_cant_find_product(from_number, aff_url[0]['promotion_link'])
                 return JSONResponse({"error": "Failed to get product details"}, status_code=500)
 
             similar_products_with_affiliate = aliexpress_client.similar_products(product)
@@ -138,6 +139,20 @@ async def webhook(request: Request):
 
             twilio_client.send_template_message(
                 to_number=from_number,
+                product_title_1=similar_products_with_affiliate[0]["title"],
+                product_title_2=similar_products_with_affiliate[1]["title"],
+                product_title_3=similar_products_with_affiliate[2]["title"],
+                product_url_1=similar_products_with_affiliate[0]["affiliate_url"],
+                product_url_2=similar_products_with_affiliate[1]["affiliate_url"],
+                product_url_3=similar_products_with_affiliate[2]["affiliate_url"] ,
+                product_price_1=similar_products_with_affiliate[0]["price"],
+                product_price_2=similar_products_with_affiliate[1]["price"],
+                product_price_3=similar_products_with_affiliate[2]["price"]
+            )
+
+            twilio_client.send_result_message(
+                to_number=from_number,
+                original_price=product["target_sale_price"],
                 product_title_1=similar_products_with_affiliate[0]["title"],
                 product_title_2=similar_products_with_affiliate[1]["title"],
                 product_title_3=similar_products_with_affiliate[2]["title"],

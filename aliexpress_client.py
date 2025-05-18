@@ -62,7 +62,7 @@ class AliExpressClient:
     #         print(f"Error expanding shortlink: {e}")
     #         return None
         
-    def extract_url_from_text(text):
+    def extract_url_from_text(self, text):
     # Find first http or https URL
         match = re.search(r'https?://\S+', text)
         if match:
@@ -162,7 +162,7 @@ class AliExpressClient:
             cheaper_products = [p for p in products if p.get('product_id') and float(p.get('target_sale_price')) < float(product.get('target_sale_price'))]
             sort_cheaper_products = sorted(cheaper_products, key=lambda x: float(x.get('target_sale_price', 0)))[:min(3, len(cheaper_products))]
 
-            logging.info(f"Cheaper products found: {sort_cheaper_products}")
+            # logging.info(f"Cheaper products found: {sort_cheaper_products}")
 
             results = []
             for p in sort_cheaper_products:

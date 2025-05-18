@@ -19,6 +19,22 @@ ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP")
 
 client = Client(twilio_sid, twilio_auth_token)
 
+def send_result_message(to_number,original_price, product_title_1, product_title_2, product_title_3,
+                            product_url_1, product_url_2, product_url_3,
+                            product_price_1, product_price_2, product_price_3):
+    message_text = f"""
+    Here are 3 cheaper products I found for you! 💰
+    Original product price: {original_price} 💵
+    1. {product_title_1} - {product_price_1} - {product_url_1}
+    2. {product_title_2} - {product_price_2} - {product_url_2}
+    3. {product_title_3} - {product_price_3} - {product_url_3}
+    """
+    message = client.messages.create(
+        from_=from_whatsapp,
+        to=to_number,
+        body=message_text
+    )
+
 def send_template_message(to_number, product_title_1, product_title_2, product_title_3,
                           product_url_1, product_url_2, product_url_3,
                           product_price_1, product_price_2, product_price_3):
@@ -101,11 +117,14 @@ def send_instruction_message(to_number):
     
     return message.sid
 
-def send_cant_find_product(to_number):
+def send_cant_find_product(to_number, url):
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        body="I couldn't find the product you were looking for. Probabaly yours is the cheapest."
+        body="""
+        I couldn't find cheaper prices. Probabaly yours is the cheapest. 
+        
+        """ + url 
     )
     
     return message.sid
