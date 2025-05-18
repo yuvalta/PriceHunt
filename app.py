@@ -106,7 +106,8 @@ async def webhook(request: Request):
         twilio_client.send_thinking_message(from_number)
 
         try:
-            product_id = aliexpress_client.extract_product_id_from_url(url)
+            just_link = aliexpress_client.extract_url_from_text(url)
+            product_id = aliexpress_client.extract_product_id_from_url(just_link)
             if not product_id:
                 logger.warning("Could not extract product ID from URL")
                 logger.info("Trying to expand shortlink")

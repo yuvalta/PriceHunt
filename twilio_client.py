@@ -105,7 +105,7 @@ def send_cant_find_product(to_number):
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        body="I couldn't find the product you were looking for. Please try again with a different link."
+        body="I couldn't find the product you were looking for. Probabaly yours is the cheapest."
     )
     
     return message.sid

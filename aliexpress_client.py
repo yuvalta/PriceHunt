@@ -62,6 +62,12 @@ class AliExpressClient:
     #         print(f"Error expanding shortlink: {e}")
     #         return None
         
+    def extract_url_from_text(text):
+    # Find first http or https URL
+        match = re.search(r'https?://\S+', text)
+        if match:
+            return match.group(0)
+        return None
     
     def get_redirected_url_info(self, url):
         try:
