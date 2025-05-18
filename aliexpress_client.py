@@ -1,9 +1,10 @@
 from typing import Dict, List, Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 import os
 from iop.base import IopClient, IopRequest
 import logging
-import httpx
+import requests
+import re
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,31 +30,46 @@ class AliExpressClient:
             app_secret=self.app_secret
         )
 
-    def extract_product_id_from_url(self, url: str) -> Optional[str]:
+    def extract_product_id_from_url_legacy(self, url: str) -> Optional[str]:
         try:
             parsed_url = urlparse(url)
             path_parts = parsed_url.path.split('/')
             for part in path_parts:
                 if part.startswith(('item-', 'product-')):
-                    return part.split('-')[1]
+                    print(part.split('-')[1])
                 if part.endswith('.html'):
                     part = part[:-5]
                 if part.isdigit() and len(part) > 8:
-                    return part
+                    print(part)
             query_params = parse_qs(parsed_url.query)
             return query_params.get('productId', [None])[0]
         except Exception as e:
             logging.error(f"Failed to extract product ID: {e}")
             return None
 
+    def extract_product_id_from_url(url):
+        match = re.search(r'/item/(\d+)\.html', url)
+        if match:
+            return match.group(1)
+        return None
 
-    async def expand_shortlink(self, url):
+    # async def expand_shortlink(self, url):
+    #     try:
+    #         async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+    #             response = await client.head(url)
+    #             return str(response.url)
+    #     except Exception as e:
+    #         print(f"Error expanding shortlink: {e}")
+    #         return None
+        
+    
+    def get_redirected_url_info(url):
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-                response = await client.head(url)
-                return str(response.url)
-        except Exception as e:
-            print(f"Error expanding shortlink: {e}")
+            response = requests.get(url, allow_redirects=True)
+            final_url = response.url
+            return unquote(final_url)
+        except requests.RequestException as e:
+            logging.error(f"Error fetching redirected URL: {e}")
             return None
         
 

@@ -110,14 +110,16 @@ async def webhook(request: Request):
             if not product_id:
                 logger.warning("Could not extract product ID from URL")
                 logger.info("Trying to expand shortlink")
-                expanded_url = await aliexpress_client.expand_shortlink(url)
+                expanded_url = aliexpress_client.get_redirected_url_info(url)
                 if expanded_url:
                     logger.info(f"Expanded URL: {expanded_url}")
                     product_id = aliexpress_client.extract_product_id_from_url(expanded_url)
                     if not product_id:
-                        logger.warning("Could not extract product ID from expanded URL")
-                        twilio_client.send_input_error_message(from_number)
-                        return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
+                        logger.warning("Could not extract product ID from expanded URL - giving it another tru with legacy method")
+                        product_id = aliexpress_client.extract_product_id_from_url_legacy(expanded_url)
+                        if not product_id:
+                            twilio_client.send_input_error_message(from_number)
+                            return JSONResponse({"error": "Invalid AliExpress URL"}, status_code=400)
                 else:
                     logger.error("Failed to expand shortlink")
                     twilio_client.send_input_error_message(from_number)
