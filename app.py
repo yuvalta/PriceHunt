@@ -130,6 +130,10 @@ async def webhook(request: Request):
             if not product:
                 logger.error("Failed to get product details")
                 aff_url =  aliexpress_client.generate_affiliate_link(url)
+                if not aff_url:
+                    logger.error("Failed to generate affiliate link")
+                    twilio_client.send_cant_find_product(from_number, url)
+                    return JSONResponse({"error": "Failed to get product details"}, status_code=500)
                 twilio_client.send_cant_find_product(from_number, aff_url[0]['promotion_link'])
                 return JSONResponse({"error": "Failed to get product details"}, status_code=500)
 

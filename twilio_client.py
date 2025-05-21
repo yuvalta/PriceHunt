@@ -22,13 +22,7 @@ client = Client(twilio_sid, twilio_auth_token)
 def send_result_message(to_number,original_price, product_title_1, product_title_2, product_title_3,
                             product_url_1, product_url_2, product_url_3,
                             product_price_1, product_price_2, product_price_3):
-    message_text = f"""
-    Here are 3 cheaper products I found for you! 💰
-    Original product price: {original_price} 💵
-    1. {product_title_1} - {product_price_1} - {product_url_1}
-    2. {product_title_2} - {product_price_2} - {product_url_2}
-    3. {product_title_3} - {product_price_3} - {product_url_3}
-    """
+    message_text = f"Here are 3 cheaper products I found for you! 💰\nOriginal product price: {original_price} 💵 \n1. {product_title_1} - {product_price_1} - {product_url_1} \n2. {product_title_2} - {product_price_2} - {product_url_2} \n3. {product_title_3} - {product_price_3} - {product_url_3}"
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
@@ -84,14 +78,7 @@ def send_input_error_message(to_number):
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        body="""
-            Oops! ❌ 
-            I didn't understand that. 
-            Please send a valid product link 👌
-
-            The best link to search look like this ✅
-            https://www.aliexpress.com/item/1234567890.html
-            """
+        body="Oops! ❌ I didn't understand that. Please send a valid product link The best link to search look like this ✅https://www.aliexpress.com/item/1234567890.html"
     )
     
     return message.sid
@@ -109,10 +96,8 @@ def send_instruction_message(to_number):
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        body="""
-            Hi! 👋 I'm Price Hunt
-            Just send me your Aliexpress product link and I'll find 3 cheaper products for you
-            """
+        body=" Hi! 👋 I'm Price Hunt " \
+        "Just send me your Aliexpress product link and I'll find 3 cheaper products for you"
     )
     
     return message.sid
@@ -121,10 +106,7 @@ def send_cant_find_product(to_number, url):
     message = client.messages.create(
         from_=from_whatsapp,
         to=to_number,
-        body="""
-        I couldn't find cheaper prices. Probabaly yours is the cheapest. 
-        
-        """ + url 
+        body="I couldn't find cheaper prices. Probabaly yours is the cheapest. " + url 
     )
     
     return message.sid
